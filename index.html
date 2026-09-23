@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ТулпарТакси — такси по Кыргызстану</title>
+  <meta name="description" content="Демо сайта ТулпарТакси">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="horse">🐎</span><span>Тулпар<span>Такси</span></span></div>
+  <button class="ghost" onclick="showTab('driver')">Для водителей</button>
+</header>
+
+<main>
+  <section class="hero">
+    <div>
+      <div class="eyebrow">КЫРГЫЗСТАН • ДЕМО</div>
+      <h1>Поехали<br><span>вместе.</span></h1>
+      <p>Закажи машину в Бишкеке и по Кыргызстану. Это тестовая версия, работающая прямо в браузере.</p>
+    </div>
+    <div class="mountains">▲ ▲ ▲</div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="client" onclick="showTab('client')">🚕 Заказать</button>
+    <button class="tab" data-tab="driver" onclick="showTab('driver')">🚗 Водитель</button>
+    <button class="tab" data-tab="admin" onclick="showTab('admin')">📋 Диспетчер</button>
+  </nav>
+
+  <section id="client" class="panel active">
+    <h2>Куда едем?</h2>
+    <label>Откуда<input id="from" value="Бишкек, площадь Ала-Тоо"></label>
+    <label>Куда<input id="to" value="Аэропорт Манас"></label>
+    <div class="map"><div class="route"></div><span class="pin p1">●</span><span class="pin p2">●</span><div class="maplabel">Бишкек → Манас</div></div>
+
+    <div class="tariffs">
+      <button class="tariff selected" onclick="selectTariff(this, 350)"><b>Эконом</b><span>от 350 сом</span></button>
+      <button class="tariff" onclick="selectTariff(this, 500)"><b>Комфорт</b><span>от 500 сом</span></button>
+      <button class="tariff" onclick="selectTariff(this, 750)"><b>Бизнес</b><span>от 750 сом</span></button>
+    </div>
+
+    <div class="price"><span>Примерная стоимость</span><strong id="price">350 сом</strong></div>
+    <button class="primary" onclick="orderTaxi()">Заказать такси</button>
+    <div id="orderStatus" class="status"></div>
+  </section>
+
+  <section id="driver" class="panel">
+    <h2>Режим водителя</h2>
+    <div class="driver-card">
+      <div class="avatar">🚗</div>
+      <div><b>Тестовый водитель</b><small>Кыргызстан • Бишкек</small></div>
+      <label class="switch"><input id="online" type="checkbox" onchange="toggleDriver()"><span></span></label>
+    </div>
+    <div id="driverStatus" class="status">Статус: офлайн</div>
+    <button class="primary" onclick="acceptOrder()">Взять тестовый заказ</button>
+  </section>
+
+  <section id="admin" class="panel">
+    <h2>Диспетчер</h2>
+    <div class="stats"><div><b id="orders">0</b><span>заказов</span></div><div><b id="drivers">0</b><span>водителей онлайн</span></div></div>
+    <div id="adminList" class="order-list"><p>Пока нет заказов.</p></div>
+  </section>
+</main>
+
+<footer>© 2026 ТулпарТакси • Тестовая версия</footer>
+<script src="app.js"></script>
+</body>
+</html>
