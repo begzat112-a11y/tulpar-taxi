@@ -1,126 +1,48 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111817">
-  <title>Tulpar — карта и такси</title>
-  <link rel="preconnect" href="https://mapgl.2gis.com">
-  <link rel="stylesheet" href="style.css">
-  <script src="https://mapgl.2gis.com/api/js/v1"></script>
-  <script src="https://unpkg.com/@2gis/mapgl-directions@^2/dist/directions.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111817">
+<title>Tulpar — карта и такси</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://mapgl.2gis.com/api/js/v1"></script>
+<script src="https://unpkg.com/@2gis/mapgl-directions@^2/dist/directions.js"></script>
 </head>
-<body>
-  <main id="app">
-    <div id="map" aria-label="Карта 2ГИС"></div>
+<body><main id="app">
+<div id="map"></div>
+<header class="topbar"><button id="miniBrand" class="brand"><span class="brand-mark">✦</span><span><b>TULPAR</b><small>карта • такси</small></span></button></header>
+<div class="map-title">✦ Бишкек</div>
+<div class="map-actions"><button id="locateBtn">⌖</button><button id="zoomInBtn">+</button><button id="zoomOutBtn">−</button></div>
+<div id="toast" class="toast hidden"></div>
 
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">✦</div>
-        <div>
-          <div class="brand-name">TULPAR</div>
-          <div class="brand-sub">карта • такси</div>
-        </div>
-      </div>
+<section id="routeSheet" class="sheet collapsed">
+<div id="sheetHandle" class="grab-area"><div class="grab"></div></div>
+<div class="sheet-head"><div><div class="eyebrow">TULPAR • ЖОЛ</div><h1 id="sheetTitle">Куда едем?</h1></div><button id="closeRouteBtn" class="small-close hidden">×</button></div>
 
-      <div class="search-wrap">
-        <span class="search-icon">⌕</span>
-        <input id="searchInput" autocomplete="off" placeholder="Куда едем? Адрес или место">
-        <button id="clearSearch" class="icon-btn hidden" aria-label="Очистить">×</button>
-        <div id="suggestions" class="suggestions hidden"></div>
-      </div>
-    </header>
+<div class="search-wrap"><span>⌕</span><input id="searchInput" autocomplete="off" placeholder="Адрес, место или организация"><button id="clearSearch" class="icon-btn hidden">×</button><div id="suggestions" class="suggestions hidden"></div></div>
 
-    <div class="map-actions">
-      <button id="locateBtn" class="round-btn" aria-label="Моё местоположение">⌖</button>
-      <button id="zoomInBtn" class="round-btn" aria-label="Приблизить">+</button>
-      <button id="zoomOutBtn" class="round-btn" aria-label="Отдалить">−</button>
-    </div>
+<div class="places">
+<button id="fromRow" class="place-row"><i class="dot from-dot"></i><span><small>ОТКУДА</small><b id="fromText">Моё местоположение</b></span>›</button>
+<div class="route-line"></div>
+<button id="toRow" class="place-row"><i class="dot to-dot"></i><span><small>КУДА</small><b id="toText">Выберите место или найдите его</b></span>›</button>
+</div>
 
-    <div id="toast" class="toast hidden"></div>
+<div class="quick-places"><button data-slot="home">⌂ Дом</button><button data-slot="work">▣ Работа</button><button id="pickOnMapBtn">⌖ На карте</button></div>
 
-    <section id="routeSheet" class="sheet">
-      <div class="grab"></div>
+<div class="mode-tabs"><button class="mode active" data-mode="car">🚕 Машина</button><button class="mode" data-mode="walk">🚶 Пешком</button></div>
+<div id="routeVariants" class="route-variants hidden"></div>
+<div id="routeInfo" class="route-info hidden"><div><b id="routeTime">—</b><small>в пути</small></div><i></i><div><b id="routeDistance">—</b><small>расстояние</small></div></div>
 
-      <div class="sheet-head">
-        <div>
-          <div class="eyebrow">TULPAR • ПУТЬ</div>
-          <h1>Куда поедем?</h1>
-        </div>
-        <button id="closeRouteBtn" class="small-close hidden" aria-label="Закрыть маршрут">×</button>
-      </div>
+<div id="tariffs" class="tariffs hidden"><label>ВЫБЕРИТЕ ТАРИФ</label>
+<button class="tariff active" data-type="economy"><span>🚕</span><strong>Эконом<small>быстро и доступно</small></strong><b id="economyPrice">—</b></button>
+<button class="tariff" data-type="comfort"><span>🚘</span><strong>Комфорт<small>больше пространства</small></strong><b id="comfortPrice">—</b></button>
+<button class="tariff" data-type="premium"><span>⭐</span><strong>Premium<small>особый уровень Tulpar</small></strong><b id="premiumPrice">—</b></button></div>
 
-      <div class="places">
-        <button id="fromRow" class="place-row">
-          <span class="dot from-dot"></span>
-          <span class="place-text">
-            <small>ОТКУДА</small>
-            <strong id="fromText">Моё местоположение</strong>
-          </span>
-          <span class="row-chevron">›</span>
-        </button>
+<button id="orderBtn" class="primary-btn" disabled><b>Заказать Tulpar</b><b>→</b></button>
+<div class="ornament">✦ ─── <b>TULPAR</b> ─── ✦</div>
+</section>
 
-        <div class="route-line"></div>
-
-        <button id="toRow" class="place-row">
-          <span class="dot to-dot"></span>
-          <span class="place-text">
-            <small>КУДА</small>
-            <strong id="toText">Выберите место на карте</strong>
-          </span>
-          <span class="row-chevron">›</span>
-        </button>
-      </div>
-
-      <div id="quickPlaces" class="quick-places">
-        <button data-slot="home" class="quick-chip"><span>⌂</span> Дом</button>
-        <button data-slot="work" class="quick-chip"><span>▣</span> Работа</button>
-        <button id="pickOnMapBtn" class="quick-chip"><span>⌖</span> На карте</button>
-      </div>
-
-      <div id="routeInfo" class="route-info hidden">
-        <div class="route-stat">
-          <span id="routeTime">—</span>
-          <small>в пути</small>
-        </div>
-        <div class="route-divider"></div>
-        <div class="route-stat">
-          <span id="routeDistance">—</span>
-          <small>расстояние</small>
-        </div>
-        <div class="route-divider"></div>
-        <div class="route-stat">
-          <span id="routePrice">—</span>
-          <small>ориентир</small>
-        </div>
-      </div>
-
-      <div class="mode-tabs">
-        <button class="mode active" data-mode="car">🚕 Tulpar</button>
-        <button class="mode" data-mode="walk">🚶 Пешком</button>
-      </div>
-
-      <button id="orderBtn" class="primary-btn" disabled>
-        <span>Заказать Tulpar</span><span>→</span>
-      </button>
-
-      <div class="ornament"><i></i><b>✦</b><i></i></div>
-    </section>
-
-    <div id="pickHint" class="pick-hint hidden">
-      <span>Нажмите на карту, чтобы выбрать точку</span>
-      <button id="cancelPickBtn">Отмена</button>
-    </div>
-
-    <div id="loader" class="loader">
-      <div class="loader-card">
-        <div class="loader-mark">✦</div>
-        <strong>TULPAR</strong>
-        <span>Загружаем карту…</span>
-      </div>
-    </div>
-  </main>
-
-  <script src="app.js"></script>
-</body>
-</html>
+<div id="pickHint" class="pick-hint hidden"><span>Нажмите на карту, чтобы выбрать точку</span><button id="cancelPickBtn">Отмена</button></div>
+<div id="loader" class="loader"><div><div class="loader-mark">✦</div><b>TULPAR</b><small>Загружаем карту…</small></div></div>
+</main><script src="app.js"></script></body></html>

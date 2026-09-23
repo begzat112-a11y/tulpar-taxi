@@ -1,395 +1,44 @@
-const API_KEY = 'd771d962-3726-43ba-bf11-e82ed12d3085';
-const DEFAULT_CENTER = [74.6036, 42.8746]; // Bishkek
-const DEFAULT_ZOOM = 12.5;
-
-let map = null;
-let directions = null;
-let fromPoint = null;
-let toPoint = null;
-let fromMarker = null;
-let toMarker = null;
-let myMarker = null;
-let carMarkers = [];
-let activeMode = 'car';
-let pickMode = null;
-let searchTimer = null;
-
-const $ = (id) => document.getElementById(id);
-const searchInput = $('searchInput');
-const suggestions = $('suggestions');
-const toast = $('toast');
-
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.remove('hidden');
-  clearTimeout(showToast.t);
-  showToast.t = setTimeout(() => toast.classList.add('hidden'), 2600);
-}
-
-function setLoading(show) {
-  $('loader').style.opacity = show ? '1' : '0';
-  $('loader').style.pointerEvents = show ? 'auto' : 'none';
-}
-
-function savePlace(slot, point, label) {
-  localStorage.setItem('tulpar_' + slot, JSON.stringify({point, label}));
-}
-
-function getPlace(slot) {
-  try { return JSON.parse(localStorage.getItem('tulpar_' + slot)); } catch { return null; }
-}
-
-function formatDistance(m) {
-  if (m == null) return '—';
-  return m < 1000 ? `${Math.round(m)} м` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} км`;
-}
-
-function formatTime(s) {
-  if (s == null) return '—';
-  const min = Math.max(1, Math.round(s / 60));
-  if (min < 60) return `${min} мин`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h} ч ${m} мин` : `${h} ч`;
-}
-
-function estimatePrice(distanceM) {
-  if (!distanceM) return '—';
-  const price = Math.max(120, Math.round((90 + distanceM / 1000 * 28) / 10) * 10);
-  return `≈ ${price} с`;
-}
-
-function makeMarker(point, kind) {
-  const html = kind === 'from'
-    ? '<div class="tm-marker tm-from"></div>'
-    : '<div class="tm-marker tm-to">✦</div>';
-  return new mapgl.HtmlMarker(map, {coordinates: point, html});
-}
-
-function clearPointMarker(marker) {
-  if (marker) marker.destroy();
-}
-
-function setFrom(point, label) {
-  fromPoint = point;
-  $('fromText').textContent = label || 'Моё местоположение';
-  clearPointMarker(fromMarker);
-  fromMarker = makeMarker(point, 'from');
-}
-
-function setTo(point, label) {
-  toPoint = point;
-  $('toText').textContent = label || 'Выбранная точка';
-  clearPointMarker(toMarker);
-  toMarker = makeMarker(point, 'to');
-  $('closeRouteBtn').classList.remove('hidden');
-  $('orderBtn').disabled = false;
-  calculateRoute();
-}
-
-async function reverseGeocode(point) {
-  const url = new URL('https://catalog.api.2gis.com/3.0/items/geocode');
-  url.searchParams.set('lon', point[0]);
-  url.searchParams.set('lat', point[1]);
-  url.searchParams.set('fields', 'items.adm_div,items.address');
-  url.searchParams.set('locale', 'ru_KG');
-  url.searchParams.set('key', API_KEY);
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    const item = data?.result?.items?.[0];
-    return item?.address_name || item?.full_name || 'Выбранная точка';
-  } catch {
-    return 'Выбранная точка';
-  }
-}
-
-async function searchObjects(query) {
-  const url = new URL('https://catalog.api.2gis.com/3.0/items');
-  url.searchParams.set('q', query);
-  url.searchParams.set('fields', 'items.point,items.address,items.full_address_name,items.rubrics');
-  url.searchParams.set('page_size', '6');
-  url.searchParams.set('locale', 'ru_KG');
-  url.searchParams.set('key', API_KEY);
-  if (map) {
-    const c = map.getCenter();
-    url.searchParams.set('location', `${c[0]},${c[1]}`);
-  }
-  const res = await fetch(url);
-  const data = await res.json();
-  return data?.result?.items || [];
-}
-
-async function getSuggestions(query) {
-  const url = new URL('https://catalog.api.2gis.com/3.0/suggests');
-  url.searchParams.set('q', query);
-  url.searchParams.set('page_size', '6');
-  url.searchParams.set('locale', 'ru_KG');
-  url.searchParams.set('key', API_KEY);
-  if (map) {
-    const c = map.getCenter();
-    url.searchParams.set('location', `${c[0]},${c[1]}`);
-  }
-  const res = await fetch(url);
-  const data = await res.json();
-  return data?.result?.items || [];
-}
-
-function renderSuggestions(items) {
-  suggestions.innerHTML = '';
-  if (!items.length) {
-    suggestions.classList.add('hidden');
-    return;
-  }
-  items.slice(0, 6).forEach((item) => {
-    const btn = document.createElement('button');
-    btn.className = 'suggestion';
-    const name = item.name || item.title || item.full_name || 'Объект';
-    const subtitle = item.address_name || item.full_name || item.type || '';
-    btn.innerHTML = `<span class="s-icon">${item.type === 'building' ? '⌂' : '•'}</span><span class="s-main"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(subtitle)}</small></span>`;
-    btn.addEventListener('click', async () => {
-      suggestions.classList.add('hidden');
-      searchInput.value = name;
-      await selectSearchResult(name);
-    });
-    suggestions.appendChild(btn);
-  });
-  suggestions.classList.remove('hidden');
-}
-
-async function selectSearchResult(query) {
-  try {
-    const items = await searchObjects(query);
-    const item = items.find(x => x.point?.lon != null && x.point?.lat != null);
-    if (!item) throw new Error('not found');
-    const point = [Number(item.point.lon), Number(item.point.lat)];
-    const label = item.full_address_name || item.address_name || item.full_name || item.name || query;
-    map.setCenter(point);
-    map.setZoom(16);
-    if (pickMode === 'from') {
-      setFrom(point, label);
-      pickMode = null;
-    } else {
-      setTo(point, label);
-    }
-    $('searchInput').value = '';
-  } catch (e) {
-    showToast('Место не найдено');
-  }
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-}
-
-async function calculateRoute() {
-  if (!fromPoint || !toPoint || !directions) return;
-  $('routeInfo').classList.add('hidden');
-  try {
-    directions.clear();
-    const handler = (ev) => {
-      const route = ev?.routes?.[0];
-      if (!route) return;
-      $('routeTime').textContent = route.ui_total_duration || formatTime(route.total_duration);
-      $('routeDistance').textContent = route.ui_total_distance?.value ? `${route.ui_total_distance.value} ${route.ui_total_distance.unit || ''}` : formatDistance(route.total_distance);
-      $('routePrice').textContent = estimatePrice(route.total_distance);
-      $('routeInfo').classList.remove('hidden');
-    };
-    directions.once('directionsLoaded', handler);
-    if (activeMode === 'walk') {
-      await directions.pedestrianRoute({points: [fromPoint, toPoint]});
-    } else {
-      await directions.carRoute({
-        points: [fromPoint, toPoint],
-        style: {routeLineWidth: 6, substrateLineWidth: 12, haloLineWidth: 18}
-      });
-    }
-  } catch (e) {
-    console.error(e);
-    showToast('Не удалось построить маршрут');
-  }
-}
-
-function startPick(mode) {
-  pickMode = mode;
-  $('pickHint').classList.remove('hidden');
-  $('routeSheet').style.opacity = '.72';
-}
-
-function stopPick() {
-  pickMode = null;
-  $('pickHint').classList.add('hidden');
-  $('routeSheet').style.opacity = '1';
-}
-
-function createTulparCars() {
-  const points = [
-    [74.590,42.867],[74.615,42.878],[74.628,42.853],[74.575,42.889],
-    [74.650,42.874],[74.606,42.902],[74.557,42.863],[74.640,42.906]
-  ];
-  carMarkers.forEach(m => m.destroy());
-  carMarkers = points.map((p, i) => new mapgl.HtmlMarker(map, {
-    coordinates:p,
-    html:`<div class="car-marker" title="Tulpar ${i+1}">🚕</div>`
-  }));
-}
-
-function setMyLocation(point) {
-  clearPointMarker(myMarker);
-  myMarker = new mapgl.HtmlMarker(map, {
-    coordinates: point,
-    html:'<div class="me-marker"><span></span></div>'
-  });
-  map.setCenter(point);
-  map.setZoom(15);
-}
-
-function useGeolocation() {
-  if (!navigator.geolocation) {
-    showToast('Геолокация недоступна');
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const p = [pos.coords.longitude, pos.coords.latitude];
-      setMyLocation(p);
-      if (!fromPoint) setFrom(p, 'Моё местоположение');
-    },
-    () => showToast('Разрешите доступ к геолокации в браузере'),
-    {enableHighAccuracy:true, timeout:10000, maximumAge:60000}
-  );
-}
-
-function initMap() {
-  if (!window.mapgl) {
-    showToast('Не загрузилась библиотека 2ГИС');
-    return;
-  }
-  try {
-    map = new mapgl.Map('map', {
-      key: API_KEY,
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      copyright: 'bottomLeft'
-    });
-
-    map.on('click', async (e) => {
-      if (!pickMode) return;
-      const p = e.lngLat;
-      const label = await reverseGeocode(p);
-      if (pickMode === 'from') setFrom(p, label);
-      else setTo(p, label);
-      stopPick();
-    });
-
-    map.on('idle', () => setLoading(false));
-
-    directions = new mapgl.Directions(map, {directionsApiKey: API_KEY});
-    createTulparCars();
-
-    // Restore saved places if available.
-    const home = getPlace('home');
-    if (home) $('quickPlaces').querySelector('[data-slot="home"]').title = home.label;
-    const work = getPlace('work');
-    if (work) $('quickPlaces').querySelector('[data-slot="work"]').title = work.label;
-
-    $('fromText').textContent = 'Моё местоположение';
-    setTimeout(useGeolocation, 900);
-  } catch (e) {
-    console.error(e);
-    setLoading(false);
-    showToast('Ошибка запуска карты. Проверьте ключ 2ГИС.');
-  }
-}
-
-searchInput.addEventListener('input', () => {
-  $('clearSearch').classList.toggle('hidden', !searchInput.value);
-  clearTimeout(searchTimer);
-  const q = searchInput.value.trim();
-  if (q.length < 2) {
-    suggestions.classList.add('hidden');
-    return;
-  }
-  searchTimer = setTimeout(async () => {
-    try {
-      renderSuggestions(await getSuggestions(q));
-    } catch (e) {
-      console.error(e);
-      suggestions.classList.add('hidden');
-    }
-  }, 260);
-});
-
-searchInput.addEventListener('keydown', async (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const q = searchInput.value.trim();
-    if (q) {
-      suggestions.classList.add('hidden');
-      await selectSearchResult(q);
-    }
-  }
-});
-
-$('clearSearch').addEventListener('click', () => {
-  searchInput.value = '';
-  suggestions.classList.add('hidden');
-  $('clearSearch').classList.add('hidden');
-  searchInput.focus();
-});
-
-$('locateBtn').addEventListener('click', useGeolocation);
-$('zoomInBtn').addEventListener('click', () => map?.setZoom(map.getZoom() + 1));
-$('zoomOutBtn').addEventListener('click', () => map?.setZoom(map.getZoom() - 1));
-
-$('toRow').addEventListener('click', () => startPick('to'));
-$('fromRow').addEventListener('click', () => startPick('from'));
-$('pickOnMapBtn').addEventListener('click', () => startPick('to'));
-$('cancelPickBtn').addEventListener('click', stopPick);
-
-$('closeRouteBtn').addEventListener('click', () => {
-  directions?.clear();
-  clearPointMarker(toMarker);
-  toMarker = null;
-  toPoint = null;
-  $('toText').textContent = 'Выберите место на карте';
-  $('routeInfo').classList.add('hidden');
-  $('orderBtn').disabled = true;
-  $('closeRouteBtn').classList.add('hidden');
-});
-
-document.querySelectorAll('.quick-chip[data-slot]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const slot = btn.dataset.slot;
-    const saved = getPlace(slot);
-    if (!saved) {
-      startPick('to');
-      showToast(`Выберите точку — сохраним как ${slot === 'home' ? 'Дом' : 'Работа'}`);
-      const oldHandler = async () => {};
-      return;
-    }
-    setTo(saved.point, saved.label);
-    map.setCenter(saved.point);
-    map.setZoom(15);
-  });
-});
-
-document.querySelectorAll('.mode').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.mode').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeMode = btn.dataset.mode;
-    if (fromPoint && toPoint) calculateRoute();
-  });
-});
-
-$('orderBtn').addEventListener('click', () => {
-  if (!toPoint) return;
-  showToast('Заказ Tulpar: следующий этап подключим к водителям');
-});
-
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.search-wrap')) suggestions.classList.add('hidden');
-});
-
-// Long press is intentionally not used: map click remains simple on phones.
-window.addEventListener('load', initMap);
+const API_KEY='d771d962-3726-43ba-bf11-e82ed12d3085';
+const DEFAULT_CENTER=[74.6036,42.8746],DEFAULT_ZOOM=12.5;
+const TARIFFS={economy:{name:'Эконом',start:50,km:12,min:120},comfort:{name:'Комфорт',start:80,km:18,min:170},premium:{name:'Premium',start:150,km:30,min:250}};
+let map,directions,fromPoint,toPoint,fromMarker,toMarker,myMarker,carMarkers=[],activeMode='car',activeTariff='economy',pickMode=null,searchTimer,routeData;
+const $=id=>document.getElementById(id),sheet=$('routeSheet'),input=$('searchInput'),suggestions=$('suggestions'),toast=$('toast');
+const toastMsg=m=>{toast.textContent=m;toast.classList.remove('hidden');clearTimeout(toastMsg.t);toastMsg.t=setTimeout(()=>toast.classList.add('hidden'),2600)};
+const loading=x=>{$('loader').style.opacity=x?'1':'0';$('loader').style.pointerEvents=x?'auto':'none'};
+const save=(s,p,l)=>localStorage.setItem('tulpar_'+s,JSON.stringify({point:p,label:l}));
+const get=s=>{try{return JSON.parse(localStorage.getItem('tulpar_'+s))}catch{return null}};
+const dist=m=>m==null?'—':m<1000?Math.round(m)+' м':(m/1000).toFixed(m<10000?1:0)+' км';
+const time=s=>{if(s==null)return'—';let m=Math.max(1,Math.round(s/60));return m<60?m+' мин':Math.floor(m/60)+' ч '+(m%60?m%60+' мин':'')};
+const price=(m,t)=>{if(!m)return'—';let x=TARIFFS[t];return Math.max(x.min,Math.round((x.start+m/1000*x.km)/10)*10)+' с'};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+function marker(p,k){return new mapgl.HtmlMarker(map,{coordinates:p,html:k==='from'?'<div class="tm-marker tm-from"></div>':'<div class="tm-marker tm-to">✦</div>'})}
+function setFrom(p,l){fromPoint=p; $('fromText').textContent=l||'Моё местоположение';if(fromMarker)fromMarker.destroy();fromMarker=marker(p,'from');if(toPoint)route()}
+function setTo(p,l){toPoint=p;$('toText').textContent=l||'Выбранная точка';if(toMarker)toMarker.destroy();toMarker=marker(p,'to');$('closeRouteBtn').classList.remove('hidden');$('orderBtn').disabled=false;openSheet();route()}
+async function reverse(p){try{let u=new URL('https://catalog.api.2gis.com/3.0/items/geocode');u.searchParams.set('lon',p[0]);u.searchParams.set('lat',p[1]);u.searchParams.set('locale','ru_KG');u.searchParams.set('key',API_KEY);let d=await(await fetch(u)).json(),i=d?.result?.items?.[0];return i?.address_name||i?.full_name||'Выбранная точка'}catch{return'Выбранная точка'}}
+async function objects(q){let u=new URL('https://catalog.api.2gis.com/3.0/items');u.searchParams.set('q',q);u.searchParams.set('fields','items.point,items.address,items.full_address_name,items.rubrics');u.searchParams.set('page_size','8');u.searchParams.set('locale','ru_KG');u.searchParams.set('key',API_KEY);if(map){let c=map.getCenter();u.searchParams.set('location',`${c[0]},${c[1]}`)}let d=await(await fetch(u)).json();return d?.result?.items||[]}
+async function suggest(q){let u=new URL('https://catalog.api.2gis.com/3.0/suggests');u.searchParams.set('q',q);u.searchParams.set('page_size','8');u.searchParams.set('locale','ru_KG');u.searchParams.set('key',API_KEY);if(map){let c=map.getCenter();u.searchParams.set('location',`${c[0]},${c[1]}`)}let d=await(await fetch(u)).json();return d?.result?.items||[]}
+function render(items){suggestions.innerHTML='';if(!items.length)return suggestions.classList.add('hidden');items.slice(0,8).forEach(i=>{let b=document.createElement('button');b.className='suggestion';let n=i.name||i.title||i.full_name||'Объект',s=i.address_name||i.full_name||i.type||'';b.innerHTML=`<span class="s-icon">${i.type==='building'?'⌂':'•'}</span><span class="s-main"><strong>${esc(n)}</strong><small>${esc(s)}</small></span>`;b.onclick=async()=>{suggestions.classList.add('hidden');input.value=n;await select(n)};suggestions.appendChild(b)});suggestions.classList.remove('hidden')}
+async function select(q){try{let a=await objects(q),i=a.find(x=>x.point?.lon!=null&&x.point?.lat!=null);if(!i)throw 0;let p=[+i.point.lon,+i.point.lat],l=i.full_address_name||i.address_name||i.full_name||i.name||q;map.setCenter(p);map.setZoom(16);pickMode==='from'?setFrom(p,l):setTo(p,l);pickMode=null;input.value='';$('clearSearch').classList.add('hidden')}catch{toastMsg('Место не найдено')}}
+function variants(routes){let box=$('routeVariants');box.innerHTML='';if(!Array.isArray(routes)||routes.length<2)return box.classList.add('hidden');routes.slice(0,3).forEach((r,i)=>{let b=document.createElement('button');b.className='variant'+(!i?' active':'');b.innerHTML=`<b>${!i?'Основной маршрут':'Вариант '+(i+1)}</b><small>${r.ui_total_duration||time(r.total_duration)} • ${r.ui_total_distance?.value||dist(r.total_distance)}</small>`;b.onclick=()=>{box.querySelectorAll('.variant').forEach(x=>x.classList.remove('active'));b.classList.add('active')};box.appendChild(b)});box.classList.remove('hidden')}
+function prices(m){['economy','comfort','premium'].forEach(t=>$(t+'Price').textContent=price(m,t))}
+async function route(){if(!fromPoint||!toPoint||!directions)return;$('routeInfo').classList.add('hidden');$('tariffs').classList.add('hidden');$('routeVariants').classList.add('hidden');try{directions.clear();directions.once('directionsLoaded',e=>{let r=e?.routes?.[0];if(!r)return;routeData=r;$('routeTime').textContent=r.ui_total_duration||time(r.total_duration);$('routeDistance').textContent=r.ui_total_distance?.value?`${r.ui_total_distance.value} ${r.ui_total_distance.unit||''}`:dist(r.total_distance);$('routeInfo').classList.remove('hidden');prices(r.total_distance);$('tariffs').classList.remove('hidden');variants(e.routes);$('sheetTitle').textContent='Маршрут готов'});if(activeMode==='walk')await directions.pedestrianRoute({points:[fromPoint,toPoint]});else await directions.carRoute({points:[fromPoint,toPoint],style:{routeLineWidth:6,substrateLineWidth:12,haloLineWidth:18}})}catch(e){console.error(e);toastMsg('Не удалось построить маршрут')}}
+function openSheet(){$('routeSheet').classList.remove('collapsed');$('routeSheet').classList.add('expanded')}
+function collapseSheet(){$('routeSheet').classList.remove('expanded');$('routeSheet').classList.add('collapsed');suggestions.classList.add('hidden')}
+function pick(m){pickMode=m;openSheet();$('pickHint').classList.remove('hidden');sheet.style.opacity='.78'}
+function stopPick(){pickMode=null;$('pickHint').classList.add('hidden');sheet.style.opacity='1'}
+function cars(){let p=[[74.590,42.867],[74.615,42.878],[74.628,42.853],[74.575,42.889],[74.650,42.874],[74.606,42.902],[74.557,42.863],[74.640,42.906]];carMarkers.forEach(x=>x.destroy());carMarkers=p.map((x,i)=>new mapgl.HtmlMarker(map,{coordinates:x,html:`<div class="car-marker">🚕</div>`}))}
+function locate(){if(!navigator.geolocation)return toastMsg('Геолокация недоступна');navigator.geolocation.getCurrentPosition(p=>{let x=[p.coords.longitude,p.coords.latitude];if(myMarker)myMarker.destroy();myMarker=new mapgl.HtmlMarker(map,{coordinates:x,html:'<div class="me-marker"><span></span></div>'});map.setCenter(x);map.setZoom(15);if(!fromPoint)setFrom(x,'Моё местоположение')},()=>toastMsg('Разрешите геолокацию в браузере'),{enableHighAccuracy:true,timeout:10000,maximumAge:60000})}
+function reset(){directions?.clear();toMarker?.destroy();toMarker=null;toPoint=null;routeData=null;$('toText').textContent='Выберите место или найдите его';$('routeInfo').classList.add('hidden');$('routeVariants').classList.add('hidden');$('tariffs').classList.add('hidden');$('orderBtn').disabled=true;$('closeRouteBtn').classList.add('hidden');$('sheetTitle').textContent='Куда едем?'}
+function init(){if(!window.mapgl)return toastMsg('Не загрузилась библиотека 2ГИС');try{map=new mapgl.Map('map',{key:API_KEY,center:DEFAULT_CENTER,zoom:DEFAULT_ZOOM,copyright:'bottomLeft'});map.on('click',async e=>{if(!pickMode)return;let p=e.lngLat,l=await reverse(p);pickMode==='from'?setFrom(p,l):setTo(p,l);stopPick()});map.on('idle',()=>loading(false));directions=new mapgl.Directions(map,{directionsApiKey:API_KEY});cars();setTimeout(locate,900)}catch(e){console.error(e);loading(false);toastMsg('Ошибка запуска карты')}} 
+input.addEventListener('focus',openSheet);input.addEventListener('input',()=>{clearTimeout(searchTimer);$('clearSearch').classList.toggle('hidden',!input.value);let q=input.value.trim();if(q.length<2)return suggestions.classList.add('hidden');searchTimer=setTimeout(async()=>{try{render(await suggest(q))}catch{suggestions.classList.add('hidden')}},260)});
+input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();let q=input.value.trim();if(q)select(q)}});$('clearSearch').onclick=()=>{input.value='';suggestions.classList.add('hidden');$('clearSearch').classList.add('hidden');input.focus()};
+$('locateBtn').onclick=locate;$('zoomInBtn').onclick=()=>map?.setZoom(map.getZoom()+1);$('zoomOutBtn').onclick=()=>map?.setZoom(map.getZoom()-1);
+$('miniBrand').onclick=()=>sheet.classList.contains('collapsed')?openSheet():collapseSheet();$('sheetHandle').onclick=()=>sheet.classList.contains('collapsed')?openSheet():collapseSheet();
+$('toRow').onclick=()=>{openSheet();input.focus()};$('fromRow').onclick=()=>pick('from');$('pickOnMapBtn').onclick=()=>pick('to');$('cancelPickBtn').onclick=stopPick;$('closeRouteBtn').onclick=reset;
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');activeMode=b.dataset.mode;if(fromPoint&&toPoint)route()});
+document.querySelectorAll('.tariff').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tariff').forEach(x=>x.classList.remove('active'));b.classList.add('active');activeTariff=b.dataset.type});
+document.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>{let s=b.dataset.slot,v=get(s);if(!v){pick('to');toastMsg(`Выберите точку — сохраним как ${s==='home'?'Дом':'Работа'}`);return}setTo(v.point,v.label);map.setCenter(v.point);map.setZoom(15)});
+$('orderBtn').onclick=()=>{if(routeData)toastMsg(`Tulpar • ${TARIFFS[activeTariff].name} • ${price(routeData.total_distance,activeTariff)}`)};
+document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))suggestions.classList.add('hidden')});
+let dragY=null;$('sheetHandle').addEventListener('touchstart',e=>dragY=e.touches[0].clientY,{passive:true});$('sheetHandle').addEventListener('touchend',e=>{if(dragY===null)return;let d=e.changedTouches[0].clientY-dragY;dragY=null;if(d<-25)openSheet();else if(d>25)collapseSheet()},{passive:true});
+window.addEventListener('load',init);
