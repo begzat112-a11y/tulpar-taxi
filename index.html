@@ -1,70 +1,111 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ТулпарТакси — такси по Кыргызстану</title>
-  <meta name="description" content="Демо сайта ТулпарТакси">
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10201f">
+<title>Тулпар — Карта и навигация</title>
+<meta name="description" content="Тулпар — карта, поиск мест, маршруты и ТулпарТакси.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="horse">🐎</span><span>Тулпар<span>Такси</span></span></div>
-  <button class="ghost" onclick="showTab('driver')">Для водителей</button>
+<header class="topbar">
+  <a class="logo" href="#" onclick="resetMap();return false"><span>🐎</span><b>Тулпар</b></a>
+  <div class="top-title">Карта и навигация</div>
+  <button class="profile" onclick="showInfo()">☰</button>
 </header>
 
-<main>
-  <section class="hero">
-    <div>
-      <div class="eyebrow">КЫРГЫЗСТАН • ДЕМО</div>
-      <h1>Поехали<br><span>вместе.</span></h1>
-      <p>Закажи машину в Бишкеке и по Кыргызстану. Это тестовая версия, работающая прямо в браузере.</p>
+<main class="map-shell">
+  <div id="map"></div>
+
+  <section class="search-panel">
+    <div class="search-row">
+      <span class="search-icon">⌕</span>
+      <input id="search" autocomplete="off" placeholder="Искать адрес, кафе, аптеку, магазин..." onkeydown="if(event.key==='Enter') searchPlace()">
+      <button class="clear" onclick="clearSearch()">×</button>
+      <button class="search-btn" onclick="searchPlace()">Найти</button>
     </div>
-    <div class="mountains">▲ ▲ ▲</div>
+    <div id="suggestions" class="suggestions"></div>
+    <div class="chips">
+      <button onclick="categorySearch('кафе')">☕ Кафе</button>
+      <button onclick="categorySearch('ресторан')">🍽 Рестораны</button>
+      <button onclick="categorySearch('аптека')">💊 Аптеки</button>
+      <button onclick="categorySearch('АЗС')">⛽ АЗС</button>
+      <button onclick="categorySearch('магазин')">🛒 Магазины</button>
+      <button onclick="categorySearch('гостиница')">🏨 Отели</button>
+      <button onclick="categorySearch('больница')">🏥 Больницы</button>
+      <button onclick="categorySearch('банкомат')">🏧 Банкоматы</button>
+    </div>
   </section>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="client" onclick="showTab('client')">🚕 Заказать</button>
-    <button class="tab" data-tab="driver" onclick="showTab('driver')">🚗 Водитель</button>
-    <button class="tab" data-tab="admin" onclick="showTab('admin')">📋 Диспетчер</button>
-  </nav>
+  <div class="map-controls">
+    <button onclick="useMyLocation()" title="Моё местоположение">📍</button>
+    <button onclick="zoomIn()">＋</button>
+    <button onclick="zoomOut()">−</button>
+  </div>
 
-  <section id="client" class="panel active">
-    <h2>Куда едем?</h2>
-    <label>Откуда<input id="from" value="Бишкек, площадь Ала-Тоо"></label>
-    <label>Куда<input id="to" value="Аэропорт Манас"></label>
-    <div class="map"><div class="route"></div><span class="pin p1">●</span><span class="pin p2">●</span><div class="maplabel">Бишкек → Манас</div></div>
-
-    <div class="tariffs">
-      <button class="tariff selected" onclick="selectTariff(this, 350)"><b>Эконом</b><span>от 350 сом</span></button>
-      <button class="tariff" onclick="selectTariff(this, 500)"><b>Комфорт</b><span>от 500 сом</span></button>
-      <button class="tariff" onclick="selectTariff(this, 750)"><b>Бизнес</b><span>от 750 сом</span></button>
+  <section class="bottom-card" id="bottomCard">
+    <div class="handle"></div>
+    <div class="route-head">
+      <div>
+        <small>НАВИГАЦИЯ</small>
+        <h1>Куда поедем?</h1>
+      </div>
+      <button class="location-btn" onclick="useMyLocation()">📍 Я здесь</button>
     </div>
 
-    <div class="price"><span>Примерная стоимость</span><strong id="price">350 сом</strong></div>
-    <button class="primary" onclick="orderTaxi()">Заказать такси</button>
-    <div id="orderStatus" class="status"></div>
-  </section>
-
-  <section id="driver" class="panel">
-    <h2>Режим водителя</h2>
-    <div class="driver-card">
-      <div class="avatar">🚗</div>
-      <div><b>Тестовый водитель</b><small>Кыргызстан • Бишкек</small></div>
-      <label class="switch"><input id="online" type="checkbox" onchange="toggleDriver()"><span></span></label>
+    <div class="route-box">
+      <div class="route-line"></div>
+      <div class="route-input">
+        <i class="green-dot"></i>
+        <input id="from" placeholder="Откуда" value="Моё местоположение">
+        <button onclick="useMyLocation()">📍</button>
+      </div>
+      <div class="route-input">
+        <i class="red-dot"></i>
+        <input id="to" placeholder="Куда">
+        <button onclick="searchDestination()">⌕</button>
+      </div>
     </div>
-    <div id="driverStatus" class="status">Статус: офлайн</div>
-    <button class="primary" onclick="acceptOrder()">Взять тестовый заказ</button>
+
+    <div class="modes">
+      <button class="mode active" data-mode="car" onclick="setMode('car')">🚗<span>Авто</span></button>
+      <button class="mode" data-mode="walk" onclick="setMode('walk')">🚶<span>Пешком</span></button>
+      <button class="mode" data-mode="bike" onclick="setMode('bike')">🚲<span>Велосипед</span></button>
+      <button class="mode taxi" onclick="openTaxi()">🚕<span>Такси</span></button>
+    </div>
+
+    <div id="routeInfo" class="route-info">
+      <span>Введите пункт назначения — карта построит маршрут.</span>
+    </div>
+    <button class="navigate" onclick="buildRoute()">🧭 Построить маршрут</button>
+    <button class="taxi-main" onclick="openTaxi()">🚕 Заказать ТулпарТакси</button>
   </section>
 
-  <section id="admin" class="panel">
-    <h2>Диспетчер</h2>
-    <div class="stats"><div><b id="orders">0</b><span>заказов</span></div><div><b id="drivers">0</b><span>водителей онлайн</span></div></div>
-    <div id="adminList" class="order-list"><p>Пока нет заказов.</p></div>
+  <section id="placeCard" class="place-card hidden">
+    <button class="close-place" onclick="closePlace()">×</button>
+    <div id="placeContent"></div>
   </section>
 </main>
 
-<footer>© 2026 ТулпарТакси • Тестовая версия</footer>
+<footer>Тулпар • Карта и навигация • Карта © OpenStreetMap contributors</footer>
+
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <button class="close-modal" onclick="closeModal()">×</button>
+    <h2>Тулпар</h2>
+    <p>Универсальная карта: ищите адреса и места, стройте маршруты и заказывайте ТулпарТакси.</p>
+    <div class="info-list">
+      <div>🔎 <b>Поиск</b><span>адреса, кафе, магазины, аптеки и другие места</span></div>
+      <div>🧭 <b>Навигация</b><span>маршрут от точки А до точки Б</span></div>
+      <div>📍 <b>Геолокация</b><span>показывает ваше положение с вашего разрешения</span></div>
+      <div>🚕 <b>ТулпарТакси</b><span>заказ такси прямо с карты</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
